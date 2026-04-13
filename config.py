@@ -23,8 +23,11 @@ OPENAI_API_KEY     = os.getenv("OPENAI_API_KEY", "")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 GOOGLE_API_KEY     = os.getenv("GOOGLE_API_KEY", "")
 
-UMLS_API_KEY  = os.getenv("UMLS_API_KEY", "")
-UMLS_USERNAME = os.getenv("UMLS_USERNAME", "")
+UMLS_API_KEY       = os.getenv("UMLS_API_KEY", "")
+UMLS_USERNAME      = os.getenv("UMLS_USERNAME", "")
+# Path to local UMLS SQLite DB built by scripts/build_local_umls.py.
+# When set, all UMLS REST API calls are replaced with local DB queries.
+UMLS_LOCAL_DB_PATH = os.getenv("UMLS_LOCAL_DB_PATH", "")
 
 # ------------------------------------------------------------------------------
 # App

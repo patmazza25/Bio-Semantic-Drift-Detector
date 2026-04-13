@@ -65,6 +65,13 @@ def is_configured() -> bool:
     key = UMLS_API_KEY or os.getenv("UMLS_API_KEY", "")
     key_ok = bool(key) and key.strip().lower() not in {"", "your_key_here", "changeme"}
     rest_ok = bool(UMLS_REST_ENDPOINT)
+    # Also consider configured if a local DB is available (no API key needed)
+    try:
+        from utils import umls_local_db
+        if umls_local_db.is_available():
+            return True
+    except Exception:
+        pass
     return key_ok and rest_ok
 
 UTS_REST = f"{UMLS_REST_ENDPOINT.rstrip('/')}/rest"
@@ -539,6 +546,17 @@ def umls_search(
     if not term or _is_trivial(term) or _looks_like_noise(term):
         return []
 
+    # ── Local DB fast-path ────────────────────────────────────────────────────
+    try:
+        from utils import umls_local_db
+        if umls_local_db.is_available():
+            sabs_list = [s.strip() for s in (sabs or "").split(",") if s.strip()] if isinstance(sabs, str) else list(sabs or [])
+            ttys_list = [t.strip() for t in (ttys or "").split(",") if t.strip()] if isinstance(ttys, str) else list(ttys or [])
+            return umls_local_db.search_strings_local(term, sabs_list, ttys_list, top_k=int(page_size) if page_size else 7)
+    except Exception:
+        pass
+    # ─────────────────────────────────────────────────────────────────────────
+
     def _canon_csv(x: Any) -> str:
         if x is None:
             return ""
@@ -973,6 +991,16 @@ def atoms_for_cui_direct(
     without calling content_by_cui_cached first.  Avoids the ~6s round-trip
     to /content/CUI/{cui} whose only purpose is to return the atoms URL.
     """
+    # ── Local DB fast-path ────────────────────────────────────────────────────
+    try:
+        from utils import umls_local_db
+        if umls_local_db.is_available():
+            pairs = umls_local_db.atoms_for_cui_local(cui)
+            return [{"rootSource": src, "code": code} for src, code in pairs]
+    except Exception:
+        pass
+    # ─────────────────────────────────────────────────────────────────────────
+
     acc: List[Dict[str, Any]] = []
     for page in range(1, max_pages + 1):
         r = _api_get(
@@ -987,6 +1015,20 @@ def atoms_for_cui_direct(
 
 
 def hierarchy_for_source_code(apikey: str, version: str, source: str, identifier: str, operation: str, page_size: int = 25, max_pages: int = 100) -> List[Dict[str, Any]]:
+    # ── Local DB fast-path (ancestors only) ──────────────────────────────────
+    if operation == "ancestors":
+        try:
+            from utils import umls_local_db
+            if umls_local_db.is_available():
+                depth = umls_local_db.ancestor_depth_local(source, identifier)
+                if depth is not None:
+                    # Callers only use len() — return a list of `depth` stubs
+                    return [{}] * depth
+                return []
+        except Exception:
+            pass
+    # ─────────────────────────────────────────────────────────────────────────
+
     acc: List[Dict[str, Any]] = []; page = 0
     while True:
         page += 1
