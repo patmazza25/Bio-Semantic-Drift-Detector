@@ -21,6 +21,9 @@ experiments/results/
 .DS_Store
 Thumbs.db
 
+# Claude Code internal state
+.claude/
+
 # Secrets / local config overrides
 .env
 *.env
