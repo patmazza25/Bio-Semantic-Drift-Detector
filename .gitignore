@@ -35,3 +35,8 @@ reports/
 runs/
 logs/
 anthropic-claude-3-5-haiku-latest/
+
+# UMLS local files (large, licensed — do not commit)
+*.rrf
+*.RRF
+utils/umls_local.db
