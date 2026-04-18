@@ -149,10 +149,29 @@ def _search_umls(
     search_type: str = "normalizedString",
 ) -> List[Dict[str, Any]]:
     """Call UMLS /search/current for a single surface. Returns concept dicts."""
-    if not query or not apikey or len(query) < 3:
+    if not query or len(query) < 3:
         return []
     if len(query.split()) > 10 or sum(ch.isalpha() for ch in query) < 3:
         return []
+    if not apikey:
+        try:
+            from utils import umls_api_linker
+            results = umls_api_linker.umls_search("", query, page_size=top_k)
+            return [
+                {
+                    "text":           query,
+                    "cui":            r["cui"],
+                    "canonical":      r.get("canonical", query),
+                    "semantic_types": r.get("semantic_types", []),
+                    "kb_sources":     r.get("kb_sources", ["UMLS"]),
+                    "valid":          True,
+                    "scores":         {"api": 1.0, "link": 1.0, "confidence": 0.8},
+                }
+                for r in results if r.get("cui")
+            ]
+        except Exception as exc:
+            log.debug("[concepts_v2] local DB fallback failed for %r: %s", query, exc)
+            return []
     try:
         r = requests.get(
             UMLS_SEARCH_URL,
@@ -212,8 +231,10 @@ def extract_concepts(
     """
     apikey = os.getenv("UMLS_API_KEY", "")
     if not apikey:
-        log.info("[concepts_v2] UMLS_API_KEY not set; returning empty concept sets.")
-        return [[] for _ in steps]
+        from utils import umls_api_linker
+        if not umls_api_linker.is_configured():
+            log.info("[concepts_v2] UMLS not configured; returning empty concept sets.")
+            return [[] for _ in steps]
 
     K = int(top_k_umls or top_k or 3)
     per_step: List[List[Dict[str, Any]]] = []
