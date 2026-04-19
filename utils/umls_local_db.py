@@ -132,15 +132,6 @@ def search_strings_local(
             except sqlite3.OperationalError:
                 rows = []
 
-    # 3. Exact LIKE fallback
-    if not rows:
-        q = (
-            f"SELECT cui, str, sab, tty, code FROM mrconso "
-            f"WHERE LOWER(str) = LOWER(?) AND sab IN ({sabs_ph}) "
-            f"LIMIT ?"
-        )
-        rows = conn.execute(q, [term] + list(sabs_set) + [top_k * 3]).fetchall()
-
     if not rows:
         return []
 

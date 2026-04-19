@@ -34,11 +34,13 @@ import os
 import re
 import time
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import requests
 
 log = logging.getLogger("concepts_v2")
+
+_search_cache: Dict[Tuple, List] = {}  # (query, top_k, search_type) → results
 
 # ── Knobs (env-overridable, mirrors concept_extractor.py) ─────────────────────
 MAX_SURFACES_PER_STEP   = int(os.getenv("CE_MAX_SURFACES_PER_STEP",   "12"))
@@ -153,11 +155,14 @@ def _search_umls(
         return []
     if len(query.split()) > 10 or sum(ch.isalpha() for ch in query) < 3:
         return []
+    _key = (query, top_k, search_type if apikey else "local")
+    if _key in _search_cache:
+        return _search_cache[_key]
     if not apikey:
         try:
             from utils import umls_api_linker
             results = umls_api_linker.umls_search("", query, page_size=top_k)
-            return [
+            out = [
                 {
                     "text":           query,
                     "cui":            r["cui"],
@@ -171,7 +176,9 @@ def _search_umls(
             ]
         except Exception as exc:
             log.debug("[concepts_v2] local DB fallback failed for %r: %s", query, exc)
-            return []
+            out = []
+        _search_cache[_key] = out
+        return out
     try:
         r = requests.get(
             UMLS_SEARCH_URL,
@@ -201,6 +208,7 @@ def _search_umls(
                 "valid":          True,
                 "scores":         {"api": 1.0, "link": 1.0, "confidence": 0.8},
             })
+        _search_cache[_key] = out
         return out
     except Exception as exc:
         log.debug("[concepts_v2] UMLS search failed for %r: %s", query, exc)
@@ -247,15 +255,15 @@ def extract_concepts(
         for surface in surfaces:
             if len(candidates) >= MAX_CANDIDATES_PER_STEP:
                 break
-            # Try normalised search first; fall back to word-order search
             concepts = _search_umls(surface, apikey, top_k=K, search_type="normalizedString")
-            if not concepts:
+            # words fallback only needed for REST API; local DB handles its own fallback internally
+            if not concepts and apikey:
                 concepts = _search_umls(surface, apikey, top_k=K, search_type="words")
             for c in concepts:
                 if c["cui"] not in seen_cuis:
                     seen_cuis.add(c["cui"])
                     candidates.append(c)
-            if RATE_SLEEP > 0:
+            if RATE_SLEEP > 0 and apikey:  # no sleep needed for local SQLite
                 time.sleep(RATE_SLEEP)
 
         # Sort by confidence, cap
